@@ -12,4 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # set(CMAKE_BUILD_TYPE Release)
 
+add_subdirectory(thirdparty/glfw)
+add_subdirectory(thirdparty/glm)
+
 add_subdirectory(source)
