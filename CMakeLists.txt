@@ -11,8 +11,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 
 # set(CMAKE_BUILD_TYPE Release)
+include_directories(thirdparty/spdlog/include)
+
 
 add_subdirectory(thirdparty/glfw)
 add_subdirectory(thirdparty/glm)
+add_subdirectory(thirdparty/spdlog)
 
 add_subdirectory(source)

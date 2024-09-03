@@ -6,6 +6,8 @@
 // #include <stdexcept>
 #include <cstdlib>
 
+#include "utils/log.hpp"
+
 #ifdef NDEBUG
 const bool enableValidationLayers = false;
 #else
@@ -127,10 +129,12 @@ private:
     m_extensions.resize(extensionCount);
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, m_extensions.data());
     {
-      std::cout << "available extensions:" << std::endl;
+      // std::cout << "available extensions:" << std::endl;
+      LOG_INFO("available extensions:");
       for (const auto &extension : m_extensions)
       {
-        std::cout << '\t' << extension.extensionName << std::endl;
+        // std::cout << '\t' << extension.extensionName << std::endl;
+        LOG_INFO("\t{}", extension.extensionName);
       }
     }
     // 告知Vulkan驱动我们要使用哪些全局的扩展以及验证层。
@@ -149,7 +153,7 @@ private:
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size()); // 启用的扩展数量
     createInfo.ppEnabledExtensionNames = extensions.data();                      // 启用的扩展名称列表
 
-    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo {};
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
     if (enableValidationLayers)
     {
       createInfo.enabledLayerCount = static_cast<uint32_t>(m_validationLayers.size()); // 启用的验证层数量
@@ -158,8 +162,9 @@ private:
       // 启用调试报告
       populateDebugMessengerCreateInfo(debugCreateInfo);
       createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debugCreateInfo;
-      
-    }else {
+    }
+    else
+    {
       createInfo.enabledLayerCount = 0;
       createInfo.pNext = nullptr;
     }
@@ -245,7 +250,25 @@ private:
       const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, // 指向包含消息的结构体
       void *pUserData)
   {
-    std::cerr << "validation layer: " << pCallbackData->pMessage << std::endl;
+    std::string validationLayer = "validation layer: " + std::string(pCallbackData->pMessage);
+
+    switch(messageSeverity)
+    {
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+        LOG_TRACE("{}", validationLayer);
+        break;
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+        LOG_INFO("{}", validationLayer);
+        break;
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+        LOG_WARN("{}", validationLayer);
+        break;
+      case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+        LOG_ERROR("{}", validationLayer);
+        break;
+      default:
+        break;
+    }
 
     return VK_FALSE;
   }
@@ -292,6 +315,9 @@ private:
 
 int main()
 {
+  Log::Init();
+
+  LOG_INFO("Hello, Vulkan!");
   HelloTriangleApplication app;
 
   try

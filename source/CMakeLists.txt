@@ -4,13 +4,14 @@ add_executable(LearnVulkan ${source})
 
 # Include directories
 target_include_directories(LearnVulkan PUBLIC include)
-target_include_directories(LearnVulkan PUBLIC thirdparty/stb)
 
+
+# 第三方库
 # compile options
 # GLM NDC 坐标的深度范围是【-1，1】，而 Vulkan 是【0，1】
 target_compile_definitions(LearnVulkan PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE)
 
-target_link_libraries(LearnVulkan PUBLIC glfw glm)
+target_link_libraries(LearnVulkan PUBLIC glfw glm spdlog)
 
 # Vulkan
 find_package(Vulkan REQUIRED)
