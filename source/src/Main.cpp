@@ -1,15 +1,20 @@
 #define GLFW_INCLUDE_VULKAN
 #include "GLFW/glfw3.h"
-#include <vector>
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
+#define VK_EXT_DEBUG_UTILS_EXTENSION_NAME "VK_EXT_debug_utils"
+#define VK_KHR_SURFACE_EXTENSION_NAME "VK_KHR_surface"
+
+#include <vector>
 
 #include <iostream>
 // #include <stdexcept>
 #include <cstdlib>
 
 #include "utils/log.hpp"
-#include "vulkan/vulkan_core.h"
+#include <algorithm>
 #include <map>
+#include <optional>
 #include <set>
 #include <algorithm>
 
@@ -71,6 +76,7 @@ private:
 
   void initVulkan()
   {
+    // 创建Vulkan实例
     // 1. 创建Vulkan实例
     createInstance();
 
@@ -231,7 +237,7 @@ private:
   // 创建窗口表面
   void createSurface()
   {
-    if(glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface) != VK_SUCCESS)
+    if (glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface) != VK_SUCCESS)
     {
       throw std::runtime_error("failed to create window surface!");
     }
@@ -357,7 +363,7 @@ private:
         .pEnabledFeatures = &deviceFeatures,
     };
 
-    if(enableValidationLayers)
+    if (enableValidationLayers)
     {
       createInfo.enabledLayerCount = static_cast<uint32_t>(m_validationLayers.size());
       createInfo.ppEnabledLayerNames = m_validationLayers.data();
@@ -376,7 +382,121 @@ private:
 
     // 获取呈现队列句柄
     vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
-    
+  }
+
+  // 创建交换链
+  void createSwapChain()
+  {
+    // 获取交换链支持详情
+    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(m_physicalDevice);
+
+    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
+    VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
+    VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+
+    // 交换链图像数量
+    uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1; // 运行时最小图像数量，加1是为了三重缓冲
+    if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
+    {
+      imageCount = swapChainSupport.capabilities.maxImageCount;
+    }
+
+    // 填入交换链创建信息
+    VkSwapchainCreateInfoKHR createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+        .surface = m_surface,
+        .minImageCount = imageCount,
+        .imageFormat = surfaceFormat.format,
+        .imageColorSpace = surfaceFormat.colorSpace,
+        .imageExtent = extent,
+        .imageArrayLayers = 1,
+        .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    };
+
+    // 交换链队列族索引
+    QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
+    uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+
+    if (indices.graphicsFamily != indices.presentFamily)
+    {
+      createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+      createInfo.queueFamilyIndexCount = 2;
+      createInfo.pQueueFamilyIndices = queueFamilyIndices;
+    }
+    else
+    {
+      createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+      createInfo.queueFamilyIndexCount = 0;     // Optional
+      createInfo.pQueueFamilyIndices = nullptr; // Optional
+    }
+
+    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    createInfo.presentMode = presentMode;
+    createInfo.clipped = VK_TRUE;
+    createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    // 创建交换链
+    if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS)
+    {
+      LOG_ERROR("failed to create swap chain!");
+      throw std::runtime_error("failed to create swap chain!");
+    }
+
+    // 获取交换链图像句柄
+    vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount, nullptr);
+    m_swapChainImages.resize(imageCount);
+    vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount, m_swapChainImages.data());
+
+    // 保存交换链图像格式和分辨率
+    m_swapChainImageFormat = surfaceFormat.format;
+    m_swapChainExtent = extent;
+  }
+
+  // 创建交换链图像视图
+  void createImageViews()
+  {
+    // 1. 调整列表的大小以容纳所有图像视图
+    m_swapChainImageViews.resize(m_swapChainImages.size());
+
+    // 2. 遍历交换链图像，为每个图像创建视图
+    for (size_t i = 0; i < m_swapChainImages.size(); i++)
+    {
+      // 创建图像视图
+      VkImageViewCreateInfo createInfo = {
+          .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+          .image = m_swapChainImages[i],     // 指定图像句柄
+          .viewType = VK_IMAGE_VIEW_TYPE_2D, // 指定图像视图类型
+          .format = m_swapChainImageFormat,  // 指定图像格式
+          .components = {
+              // 指定颜色通道映射
+              .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+              .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+              .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+              .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+          },
+          .subresourceRange = {
+              // 指定图像的哪一部分将被视图访问
+              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+              .baseMipLevel = 0,
+              .levelCount = 1,
+              .baseArrayLayer = 0,
+              .layerCount = 1,
+          },
+      };
+
+      if (vkCreateImageView(m_device, &createInfo, nullptr, &m_swapChainImageViews[i]) != VK_SUCCESS)
+      {
+        LOG_ERROR("failed to create image views!");
+        throw std::runtime_error("failed to create image views!");
+      }
+    }
+  }
+
+  // 创建图形渲染管线
+  void createGraphicsPipeline()
+  {
+
   }
 
   // 创建交换链
