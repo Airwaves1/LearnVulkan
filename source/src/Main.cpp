@@ -11,13 +11,12 @@
 // #include <stdexcept>
 #include <cstdlib>
 
+#include "utils/fileUtils.hpp"
 #include "utils/log.hpp"
 #include <algorithm>
 #include <map>
 #include <optional>
 #include <set>
-#include <algorithm>
-
 
 #define VK_KRH_SURFACE_EXTENSION_NAME "VK_KHR_surface"
 
@@ -40,11 +39,10 @@ struct QueueFamilyIndices
 
 struct SwapChainSupportDetails
 {
-  VkSurfaceCapabilitiesKHR capabilities;  // 表面能力
-  std::vector<VkSurfaceFormatKHR> formats;  // 表面格式
+  VkSurfaceCapabilitiesKHR capabilities;      // 表面能力
+  std::vector<VkSurfaceFormatKHR> formats;    // 表面格式
   std::vector<VkPresentModeKHR> presentModes; // 呈现模式
 };
-
 
 class HelloTriangleApplication
 {
@@ -94,6 +92,12 @@ private:
 
     // 6. 创建交换链
     createSwapChain();
+
+    // 7. 创建交换链图像视图
+    createImageViews();
+
+    // 8. 创建图形渲染管线
+    createGraphicsPipeline();
   }
 
   void mainLoop()
@@ -110,6 +114,15 @@ private:
     if (enableValidationLayers)
     {
       DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
+    }
+
+    // 销毁图形管线
+    vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+
+    // 清理交换链图像视图
+    for (auto imageView : m_swapChainImageViews)
+    {
+      vkDestroyImageView(m_device, imageView, nullptr);
     }
 
     // 清理交换链
@@ -496,92 +509,188 @@ private:
   // 创建图形渲染管线
   void createGraphicsPipeline()
   {
+    // 1.创建着色器阶段
+    auto vertShaderCode = readFile(SHADER_PATH "00/triangle.vert.spv");
+    auto fragShaderCode = readFile(SHADER_PATH "00/triangle.frag.spv");
 
-  }
+    VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+    VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
-  // 创建交换链
-  void createSwapChain() 
-  {
-    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(m_physicalDevice);
-
-    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
-
-    VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
-
-    VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
-
-    uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
-
-    // 如果maxImageCount为0，则表示没有限制
-    if(swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
-    {
-      imageCount = swapChainSupport.capabilities.maxImageCount;
-    }
-
-    // 创建交换链
-    VkSwapchainCreateInfoKHR createInfo = {
-      .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-      .surface = m_surface,
-      .minImageCount = imageCount,
-      .imageFormat = surfaceFormat.format,
-      .imageColorSpace = surfaceFormat.colorSpace,
-      .imageExtent = extent,
-      .imageArrayLayers = 1,
-      .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_VERTEX_BIT,
+        .module = vertShaderModule,
+        .pName = "main",
     };
 
-    // 获取队列族
-    QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
-    uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+        .stage = VK_SHADER_STAGE_FRAGMENT_BIT,
+        .module = fragShaderModule,
+        .pName = "main",
+    };
 
-    // 如果图形队列族和呈现队列族不同，我们需要使用并发模式
-    if(indices.graphicsFamily != indices.presentFamily)
-    {
-      createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-      createInfo.queueFamilyIndexCount = 2;
-      createInfo.pQueueFamilyIndices = queueFamilyIndices;
-    }
-    else
-    {
-      createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-      createInfo.queueFamilyIndexCount = 0;
-      createInfo.pQueueFamilyIndices = nullptr;
-    }
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
-    // 如果交换链支持的转换不是当前的转换，则需要进行转换
-    createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+    // 2.创建固定功能管线
+    // 2.1 动态状态
+    std::vector<VkDynamicState> dynamicStates = {
+        VK_DYNAMIC_STATE_VIEWPORT,
+        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_LINE_WIDTH};
+
+    VkPipelineDynamicStateCreateInfo dynamicState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+        .pDynamicStates = dynamicStates.data(),
+    };
+
+    // 2.2 顶点输入
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, // 结构体类型
+        .vertexBindingDescriptionCount = 0,                                 // 顶点绑定描述数量
+        .pVertexBindingDescriptions = nullptr,                              // 顶点绑定描述
+        .vertexAttributeDescriptionCount = 0,                               // 顶点属性描述数量
+        .pVertexAttributeDescriptions = nullptr,                            // 顶点属性描述
+    };
+
+    // 2.3 输入组装
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, // 结构体类型
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,                      // 拓扑图元类型
+        .primitiveRestartEnable = VK_FALSE,                                   // 是否启用重启图元
+    };
+
+    // 2.4 视口和裁剪
+    VkViewport viewport = {
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = (float)m_swapChainExtent.width,
+        .height = (float)m_swapChainExtent.height,
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f,
+    };
+
+    VkRect2D scissor = {
+        .offset = {0, 0},
+        .extent = m_swapChainExtent,
+    };
+
+    VkPipelineViewportStateCreateInfo viewportState = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, // 结构体类型
+        .viewportCount = 1,                                             // 视口数量
+        .pViewports = &viewport,                                        // 视口
+        .scissorCount = 1,                                              // 裁剪矩形数量
+        .pScissors = &scissor,                                          // 裁剪矩形
+    };
+
+    // 2.5 光栅化
+    VkPipelineRasterizationStateCreateInfo rasterizer = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, // 结构体类型
+        .depthClampEnable = VK_FALSE,                                        // 深度截断
+        .rasterizerDiscardEnable = VK_FALSE,                                 // 光栅化丢弃
+        .polygonMode = VK_POLYGON_MODE_FILL,                                 // 多边形模式
+        .cullMode = VK_CULL_MODE_BACK_BIT,                                   // 背面剔除
+        .frontFace = VK_FRONT_FACE_CLOCKWISE,                                // 正面顺时针
+        .depthBiasEnable = VK_FALSE,                                         // 深度偏移
+        .lineWidth = 1.0f,                                                   // 线宽
+    };
+
+    // 2.6 多重采样
+    VkPipelineMultisampleStateCreateInfo multisampling = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, // 结构体类型
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,                     // 光栅化采样
+        .sampleShadingEnable = VK_FALSE,                                   // 采样着色
+        .minSampleShading = 1.0f,                                          // 最小采样
+        .pSampleMask = nullptr,                                            // 采样掩码
+        .alphaToCoverageEnable = VK_FALSE,                                 // Alpha覆盖
+        .alphaToOneEnable = VK_FALSE,                                      // Alpha一个
+    };
+
+    // 2.7 深度和模板测试
+    VkPipelineDepthStencilStateCreateInfo depthStencil = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO, // 结构体类型
+        .depthTestEnable = VK_TRUE,                                          // 深度测试
+        .depthWriteEnable = VK_TRUE,                                         // 深度写入
+        .depthCompareOp = VK_COMPARE_OP_LESS,                                // 深度比较
+        .depthBoundsTestEnable = VK_FALSE,                                   // 深度边界测试
+        .stencilTestEnable = VK_FALSE,                                       // 模板测试
+        .front = {},                                                         // 正面
+        .back = {},                                                          // 背面
+        .minDepthBounds = 0.0f,                                              // 最小深度边界
+        .maxDepthBounds = 1.0f,                                              // 最大深度边界
+    };
+
+    // 2.8 颜色混合
+    VkPipelineColorBlendAttachmentState colorBlendAttachment = {
+        .blendEnable = VK_FALSE,                                                                                                      // 混合启用
+        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,                                                                                   // 源颜色混合因子
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,                                                                                  // 目标颜色混合因子
+        .colorBlendOp = VK_BLEND_OP_ADD,                                                                                              // 颜色混合操作
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,                                                                                   // 源Alpha混合因子
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,                                                                                  // 目标Alpha混合因子
+        .alphaBlendOp = VK_BLEND_OP_ADD,                                                                                              // Alpha混合操作                                                                  
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT, // 颜色写入掩码
+    };
+
+    VkPipelineColorBlendStateCreateInfo colorBlending = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, // 结构体类型
+        .logicOpEnable = VK_FALSE,                                        // 逻辑操作启用
+        .logicOp = VK_LOGIC_OP_COPY,                                      // 逻辑操作
+        .attachmentCount = 1,                                             // 附件数量
+        .pAttachments = &colorBlendAttachment,                            // 附件
+        .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f},                      // 混合常数
+    };
     
-    // 指定透明度
-    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    // 3.创建图形管线
+    VkGraphicsPipelineCreateInfo pipelineInfo = {
+        .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, // 结构体类型
+        .stageCount = 2,                                         // 着色器阶段数量
+        .pStages = shaderStages,                                 // 着色器阶段
+        .pVertexInputState = &vertexInputInfo,                   // 顶点输入
+        .pInputAssemblyState = &inputAssembly,                   // 输入组装
+        .pViewportState = &viewportState,                        // 视口和裁剪
+        .pRasterizationState = &rasterizer,                      // 光栅化
+        .pMultisampleState = &multisampling,                      // 多重采样
+        .pDepthStencilState = &depthStencil,                      // 深度和模板测试
+        .pColorBlendState = &colorBlending,                       // 颜色混合
+        .pDynamicState = &dynamicState,                          // 动态状态
+        .layout = VK_NULL_HANDLE,                                // 管线布局
+        .renderPass = VK_NULL_HANDLE,                            // 渲染通道
+        .subpass = 0,                                            // 子通道
+        .basePipelineHandle = VK_NULL_HANDLE,                    // 基础管线句柄
+        .basePipelineIndex = -1,                                 // 基础管线索引
+    };
 
-    // 指定呈现模式
-    createInfo.presentMode = presentMode;
-
-    // 指定是否裁剪窗口
-    createInfo.clipped = VK_TRUE;
-
-    // 指定交换链
-    createInfo.oldSwapchain = VK_NULL_HANDLE;
-    
-    // 创建交换链,参数包括逻辑设备、交换链创建信息、可选自定义分配器以及用于存储句柄的变量指针。
-    if(vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS)
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_graphicsPipeline) != VK_SUCCESS)
     {
-      LOG_ERROR("failed to create swap chain!");
-      throw std::runtime_error("failed to create swap chain!");
+      LOG_ERROR("failed to create graphics pipeline!");
+      throw std::runtime_error("failed to create graphics pipeline!");
     }
 
-    // 获取交换链图像句柄
-    vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount, nullptr);
-    m_swapChainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount, m_swapChainImages.data());
-
-    // 保存交换链图像格式和分辨率
-    m_swapChainImageFormat = surfaceFormat.format;
-    m_swapChainExtent = extent;
   }
 
 private:
   // 一些辅助函数
+
+  // 创建VkShaderModule
+  VkShaderModule createShaderModule(const std::vector<char> &code)
+  {
+    VkShaderModuleCreateInfo createInfo = {
+        .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .codeSize = code.size(),
+        .pCode = reinterpret_cast<const uint32_t *>(code.data()),
+    };
+
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+    {
+      LOG_ERROR("failed to create shader module!");
+      throw std::runtime_error("failed to create shader module!");
+    }
+
+    return shaderModule;
+  }
 
   // 检查物理设备是否合适
   bool isDeviceSuitable(VkPhysicalDevice device)
@@ -597,7 +706,7 @@ private:
       swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
     }
 
-    return indices.isComplete() && extensionsSupported && swapChainAdequate; 
+    return indices.isComplete() && extensionsSupported && swapChainAdequate;
   }
 
   // 枚举扩展并检查其中是否包含所有必需的扩展
@@ -611,15 +720,15 @@ private:
 
     std::set<std::string> requiredExtensions(m_deviceExtensions.begin(), m_deviceExtensions.end());
 
-    for(const auto& extension : availableExtensions)
+    for (const auto &extension : availableExtensions)
     {
       requiredExtensions.erase(extension.extensionName);
     }
 
-    if(requiredExtensions.empty())
-    {    
+    if (requiredExtensions.empty())
+    {
       LOG_DEBUG("Remaining required extensions:");
-      for(const auto& extension : requiredExtensions)
+      for (const auto &extension : requiredExtensions)
       {
         LOG_DEBUG("\t{}", extension);
       }
@@ -885,6 +994,9 @@ private:
 
   VkExtent2D m_swapChainExtent; // 交换链图像分辨率
 
+  std::vector<VkImageView> m_swapChainImageViews; // 交换链图像视图
+
+  VkPipeline m_graphicsPipeline; // 图形管线
 
   VkDebugUtilsMessengerEXT m_debugMessenger; // Vulkan调试报告
 
@@ -896,9 +1008,8 @@ private:
   };
 
   // 指定的设备扩展列表
-  const std::vector<const char*> m_deviceExtensions = {
-      VK_KHR_SWAPCHAIN_EXTENSION_NAME
-  };
+  const std::vector<const char *> m_deviceExtensions = {
+      VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 };
 
 int main()
