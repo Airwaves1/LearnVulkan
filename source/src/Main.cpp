@@ -26,29 +26,24 @@ const bool enableValidationLayers = false;
 const bool enableValidationLayers = true;
 #endif
 
-struct QueueFamilyIndices
-{
+struct QueueFamilyIndices {
   std::optional<uint32_t> graphicsFamily; // 图形队列族
   std::optional<uint32_t> presentFamily;  // 呈现队列族
 
-  bool isComplete()
-  {
+  bool isComplete() {
     return graphicsFamily.has_value() && presentFamily.has_value();
   }
 };
 
-struct SwapChainSupportDetails
-{
+struct SwapChainSupportDetails {
   VkSurfaceCapabilitiesKHR capabilities;      // 表面能力
   std::vector<VkSurfaceFormatKHR> formats;    // 表面格式
   std::vector<VkPresentModeKHR> presentModes; // 呈现模式
 };
 
-class HelloTriangleApplication
-{
+class HelloTriangleApplication {
 public:
-  void run()
-  {
+  void run() {
     initWindow();
     initVulkan();
     mainLoop();
@@ -56,24 +51,22 @@ public:
   }
 
 private:
-  void initWindow()
-  {
-    if (!glfwInit())
-    {
+  void initWindow() {
+    if (!glfwInit()) {
       throw std::runtime_error("failed to initialize GLFW!");
     }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // 禁用OpenGL兼容性
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);   // 禁止窗口调整大小, 暂时禁止窗口调整大小
+    glfwWindowHint(GLFW_RESIZABLE,
+                   GLFW_FALSE); // 禁止窗口调整大小, 暂时禁止窗口调整大小
 
-    if (!(m_window = glfwCreateWindow(m_width, m_height, "Vulkan", nullptr, nullptr)))
-    {
+    if (!(m_window = glfwCreateWindow(m_width, m_height, "Vulkan", nullptr,
+                                      nullptr))) {
       throw std::runtime_error("failed to create window!");
     }
   }
 
-  void initVulkan()
-  {
+  void initVulkan() {
     // 创建Vulkan实例
     // 1. 创建Vulkan实例
     createInstance();
@@ -96,32 +89,32 @@ private:
     // 7. 创建交换链图像视图
     createImageViews();
 
-    // 8. 创建图形渲染管线
+    // 8. 创建渲染通道
+    createRenderPass();
+
+    // 9. 创建图形渲染管线
     createGraphicsPipeline();
   }
 
-  void mainLoop()
-  {
-    while (!glfwWindowShouldClose(m_window))
-    {
+  void mainLoop() {
+    while (!glfwWindowShouldClose(m_window)) {
       glfwPollEvents();
     }
   }
 
-  void cleanup()
-  {
-    // 清理调试报告
-    if (enableValidationLayers)
-    {
-      DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
-    }
+  void cleanup() {
 
     // 销毁图形管线
     vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
 
+    // 清理图形管线布局
+    vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+    
+    // 清理渲染通道
+    vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+
     // 清理交换链图像视图
-    for (auto imageView : m_swapChainImageViews)
-    {
+    for (auto imageView : m_swapChainImageViews) {
       vkDestroyImageView(m_device, imageView, nullptr);
     }
 
@@ -134,6 +127,11 @@ private:
     // 清理窗口表面
     vkDestroySurfaceKHR(m_instance, m_surface, nullptr);
 
+    // 清理调试报告
+    if (enableValidationLayers) {
+      DestroyDebugUtilsMessengerEXT(m_instance, m_debugMessenger, nullptr);
+    }
+
     // VkInstance 应该在应用程序退出之前被清理
     vkDestroyInstance(m_instance, nullptr);
 
@@ -144,126 +142,132 @@ private:
 
 public:
   // 创建调试报告
-  static VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pCallback)
-  {
-    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
-    if (func != nullptr)
-    {
+  static VkResult CreateDebugUtilsMessengerEXT(
+      VkInstance instance,
+      const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo,
+      const VkAllocationCallbacks *pAllocator,
+      VkDebugUtilsMessengerEXT *pCallback) {
+    auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+        instance, "vkCreateDebugUtilsMessengerEXT");
+    if (func != nullptr) {
       return func(instance, pCreateInfo, pAllocator, pCallback);
-    }
-    else
-    {
+    } else {
       return VK_ERROR_EXTENSION_NOT_PRESENT;
     }
   }
 
   // 销毁调试报告
-  static void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT callback, const VkAllocationCallbacks *pAllocator)
-  {
-    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
-    if (func != nullptr)
-    {
+  static void
+  DestroyDebugUtilsMessengerEXT(VkInstance instance,
+                                VkDebugUtilsMessengerEXT callback,
+                                const VkAllocationCallbacks *pAllocator) {
+    auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(
+        instance, "vkDestroyDebugUtilsMessengerEXT");
+    if (func != nullptr) {
       func(instance, callback, pAllocator);
     }
   }
 
 private:
   // 创建Vulkan实例
-  void createInstance()
-  {
+  void createInstance() {
     // 检查指定的验证层是否被支持
-    if (enableValidationLayers && !checkValidationLayerSupport())
-    {
-      throw std::runtime_error("validation layers requested, but not available!");
+    if (enableValidationLayers && !checkValidationLayerSupport()) {
+      throw std::runtime_error(
+          "validation layers requested, but not available!");
     }
 
-    // VkApplicationInfo 结构体---------------------------------------------------------------------------
+    // VkApplicationInfo
+    // 结构体---------------------------------------------------------------------------
     // 提供应用程序基本信息，一般用于驱动程序优化和调试
     VkApplicationInfo appInfo = {
-        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,    // 结构体类型，必须是 VK_STRUCTURE_TYPE_APPLICATION_INFO
-        .pNext = nullptr,                               // 指向扩展信息的指针
-        .pApplicationName = "Hello Triangle",           // 应用程序名称字符串的指针
+        .sType =
+            VK_STRUCTURE_TYPE_APPLICATION_INFO, // 结构体类型，必须是
+                                                // VK_STRUCTURE_TYPE_APPLICATION_INFO
+        .pNext = nullptr,                     // 指向扩展信息的指针
+        .pApplicationName = "Hello Triangle", // 应用程序名称字符串的指针
         .applicationVersion = VK_MAKE_VERSION(1, 0, 0), // 应用程序版本号
-        .pEngineName = "No Engine",                     // 引擎名称字符串的指针
-        .engineVersion = VK_MAKE_VERSION(1, 0, 0),      // 引擎版本号
-        .apiVersion = VK_API_VERSION_1_1,               // 使用的Vulkan API版本
+        .pEngineName = "No Engine", // 引擎名称字符串的指针
+        .engineVersion = VK_MAKE_VERSION(1, 0, 0), // 引擎版本号
+        .apiVersion = VK_API_VERSION_1_1,          // 使用的Vulkan API版本
     };
 
     //---------------------------------------------------------------------------------------------------
 
-    // VkInstanceCreateInfo 结构体-----------------------------------------------------------------------
+    // VkInstanceCreateInfo
+    // 结构体-----------------------------------------------------------------------
     // 获取Vulkan支持的扩展列表
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
     m_extensions.resize(extensionCount);
-    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, m_extensions.data());
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount,
+                                           m_extensions.data());
     {
       // std::cout << "available extensions:" << std::endl;
       LOG_INFO("available extensions:");
-      for (const auto &extension : m_extensions)
-      {
+      for (const auto &extension : m_extensions) {
         // std::cout << '\t' << extension.extensionName << std::endl;
         LOG_INFO("\t{}", extension.extensionName);
       }
     }
     // 告知Vulkan驱动我们要使用哪些全局的扩展以及验证层。
     VkInstanceCreateInfo createInfo = {
-        .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, // 结构体类型，必须是 VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO
-        .pNext = nullptr,                                // 指向扩展信息的指针
-        .flags = 0,                                      // 保留字段，必须为0
-        .pApplicationInfo = &appInfo,                    // 指向应用程序信息的指针
-        .enabledLayerCount = 0,                          // 启用的验证层数量
-        .ppEnabledLayerNames = nullptr,                  // 启用的验证层名称列表
-        .enabledExtensionCount = 0,                      // 启用的扩展数量
-        .ppEnabledExtensionNames = nullptr,              // 启用的扩展名称列表
+        .sType =
+            VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, // 结构体类型，必须是
+                                                    // VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO
+        .pNext = nullptr,                   // 指向扩展信息的指针
+        .flags = 0,                         // 保留字段，必须为0
+        .pApplicationInfo = &appInfo,       // 指向应用程序信息的指针
+        .enabledLayerCount = 0,             // 启用的验证层数量
+        .ppEnabledLayerNames = nullptr,     // 启用的验证层名称列表
+        .enabledExtensionCount = 0,         // 启用的扩展数量
+        .ppEnabledExtensionNames = nullptr, // 启用的扩展名称列表
     };
     // 创建与窗口系统相接的扩展
     auto extensions = getRequiredExtensions();
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size()); // 启用的扩展数量
-    createInfo.ppEnabledExtensionNames = extensions.data();                      // 启用的扩展名称列表
+    createInfo.enabledExtensionCount =
+        static_cast<uint32_t>(extensions.size()); // 启用的扩展数量
+    createInfo.ppEnabledExtensionNames =
+        extensions.data(); // 启用的扩展名称列表
 
     VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
-    if (enableValidationLayers)
-    {
-      createInfo.enabledLayerCount = static_cast<uint32_t>(m_validationLayers.size()); // 启用的验证层数量
-      createInfo.ppEnabledLayerNames = m_validationLayers.data();                      // 启用的验证层名称列表
+    if (enableValidationLayers) {
+      createInfo.enabledLayerCount =
+          static_cast<uint32_t>(m_validationLayers.size()); // 启用的验证层数量
+      createInfo.ppEnabledLayerNames =
+          m_validationLayers.data(); // 启用的验证层名称列表
 
       // 启用调试报告
       populateDebugMessengerCreateInfo(debugCreateInfo);
       createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *)&debugCreateInfo;
-    }
-    else
-    {
+    } else {
       createInfo.enabledLayerCount = 0;
       createInfo.pNext = nullptr;
     }
 
     //---------------------------------------------------------------------------------------------------
 
-    // 创建Vulkan实例,一般的Vulkan函数都会返回一个 VkResult 类型的值，用于检查函数是否成功执行
-    if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS)
-    {
+    // 创建Vulkan实例,一般的Vulkan函数都会返回一个 VkResult
+    // 类型的值，用于检查函数是否成功执行
+    if (vkCreateInstance(&createInfo, nullptr, &m_instance) != VK_SUCCESS) {
       throw std::runtime_error("failed to create instance!");
     }
   }
 
   // 创建窗口表面
-  void createSurface()
-  {
-    if (glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface) != VK_SUCCESS)
-    {
+  void createSurface() {
+    if (glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface) !=
+        VK_SUCCESS) {
       throw std::runtime_error("failed to create window surface!");
     }
   }
 
   // 选择一个合适的物理设备
-  void pickPhysicalDevice()
-  {
+  void pickPhysicalDevice() {
     // 获取物理设备数量
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDeviceGroups(m_instance, &deviceCount, nullptr);
-    if (deviceCount == 0)
-    {
+    if (deviceCount == 0) {
       LOG_ERROR("failed to find GPUs with Vulkan support!");
       throw std::runtime_error("failed to find GPUs with Vulkan support!");
     }
@@ -274,55 +278,49 @@ private:
 
     // 为每个物理设备打分
     std::multimap<int, VkPhysicalDevice> candidates;
-    for (const auto &device : devices)
-    {
+    for (const auto &device : devices) {
       int score = rateDeviceSuitability(device);
       candidates.insert(std::make_pair(score, device));
     }
 
     // 打印得分结果
     LOG_INFO("Device score:");
-    for (const auto &candidate : candidates)
-    {
+    for (const auto &candidate : candidates) {
       LOG_INFO("Device score: {}", candidate.first);
     }
 
     // 检查最高分的物理设备是否合适
-    for (const auto &candidate : candidates)
-    {
-      if (isDeviceSuitable(candidate.second))
-      {
+    for (const auto &candidate : candidates) {
+      if (isDeviceSuitable(candidate.second)) {
         m_physicalDevice = candidate.second;
         break;
       }
     }
 
-    if (m_physicalDevice == VK_NULL_HANDLE)
-    {
+    if (m_physicalDevice == VK_NULL_HANDLE) {
       LOG_ERROR("failed to find a suitable GPU!");
       // throw std::runtime_error("failed to find a suitable GPU!");
     }
   }
 
   // 寻找队列族
-  QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device)
-  {
+  QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
     QueueFamilyIndices indices;
 
     // 获取队列族数量
     uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
+                                             nullptr);
 
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
+                                             queueFamilies.data());
 
     // VkQueueFamilyProperties 结构体 包含有关队列族的信息，
     // 例如队列族支持的操作类型以及队列族支持的队列数量，这里我们只关心是否支持图形操作
     int i = 0;
-    for (const auto &queueFamily : queueFamilies)
-    {
-      if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT)
-      {
+    for (const auto &queueFamily : queueFamilies) {
+      if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
         indices.graphicsFamily = i;
       }
       i++;
@@ -330,12 +328,11 @@ private:
 
     // 检查队列族是否支持呈现操作
     VkBool32 presentSupport = false;
-    for (uint32_t i = 0; i < queueFamilyCount; i++)
-    {
-      vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface, &presentSupport);
+    for (uint32_t i = 0; i < queueFamilyCount; i++) {
+      vkGetPhysicalDeviceSurfaceSupportKHR(device, i, m_surface,
+                                           &presentSupport);
 
-      if (presentSupport)
-      {
+      if (presentSupport) {
         indices.presentFamily = i;
       }
     }
@@ -344,17 +341,16 @@ private:
   }
 
   // 创建逻辑设备
-  void createLogicalDevice()
-  {
+  void createLogicalDevice() {
     QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
 
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
-    std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+    std::set<uint32_t> uniqueQueueFamilies = {indices.graphicsFamily.value(),
+                                              indices.presentFamily.value()};
 
     float queuePriority = 1.0f;
 
-    for (uint32_t queueFamily : uniqueQueueFamilies)
-    {
+    for (uint32_t queueFamily : uniqueQueueFamilies) {
       VkDeviceQueueCreateInfo queueCreateInfo = {
           .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
           .queueFamilyIndex = queueFamily,
@@ -371,46 +367,52 @@ private:
         .queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size()),
         .pQueueCreateInfos = queueCreateInfos.data(),
         .enabledLayerCount = 0,
-        .enabledExtensionCount = static_cast<uint32_t>(m_deviceExtensions.size()),
+        .enabledExtensionCount =
+            static_cast<uint32_t>(m_deviceExtensions.size()),
         .ppEnabledExtensionNames = m_deviceExtensions.data(),
         .pEnabledFeatures = &deviceFeatures,
     };
 
-    if (enableValidationLayers)
-    {
-      createInfo.enabledLayerCount = static_cast<uint32_t>(m_validationLayers.size());
+    if (enableValidationLayers) {
+      createInfo.enabledLayerCount =
+          static_cast<uint32_t>(m_validationLayers.size());
       createInfo.ppEnabledLayerNames = m_validationLayers.data();
     }
 
     // 创建逻辑设备
-    if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS)
-    {
+    if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) !=
+        VK_SUCCESS) {
       LOG_ERROR("failed to create logical device!");
       return;
       // throw std::runtime_error("failed to create logical device!");
     }
 
     // 获取图形队列句柄
-    vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0, &m_graphicsQueue);
+    vkGetDeviceQueue(m_device, indices.graphicsFamily.value(), 0,
+                     &m_graphicsQueue);
 
     // 获取呈现队列句柄
-    vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0, &m_presentQueue);
+    vkGetDeviceQueue(m_device, indices.presentFamily.value(), 0,
+                     &m_presentQueue);
   }
 
   // 创建交换链
-  void createSwapChain()
-  {
+  void createSwapChain() {
     // 获取交换链支持详情
-    SwapChainSupportDetails swapChainSupport = querySwapChainSupport(m_physicalDevice);
+    SwapChainSupportDetails swapChainSupport =
+        querySwapChainSupport(m_physicalDevice);
 
-    VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
-    VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
+    VkSurfaceFormatKHR surfaceFormat =
+        chooseSwapSurfaceFormat(swapChainSupport.formats);
+    VkPresentModeKHR presentMode =
+        chooseSwapPresentMode(swapChainSupport.presentModes);
     VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
 
     // 交换链图像数量
-    uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1; // 运行时最小图像数量，加1是为了三重缓冲
-    if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)
-    {
+    uint32_t imageCount = swapChainSupport.capabilities.minImageCount +
+                          1; // 运行时最小图像数量，加1是为了三重缓冲
+    if (swapChainSupport.capabilities.maxImageCount > 0 &&
+        imageCount > swapChainSupport.capabilities.maxImageCount) {
       imageCount = swapChainSupport.capabilities.maxImageCount;
     }
 
@@ -428,16 +430,14 @@ private:
 
     // 交换链队列族索引
     QueueFamilyIndices indices = findQueueFamilies(m_physicalDevice);
-    uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(), indices.presentFamily.value()};
+    uint32_t queueFamilyIndices[] = {indices.graphicsFamily.value(),
+                                     indices.presentFamily.value()};
 
-    if (indices.graphicsFamily != indices.presentFamily)
-    {
+    if (indices.graphicsFamily != indices.presentFamily) {
       createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
       createInfo.queueFamilyIndexCount = 2;
       createInfo.pQueueFamilyIndices = queueFamilyIndices;
-    }
-    else
-    {
+    } else {
       createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
       createInfo.queueFamilyIndexCount = 0;     // Optional
       createInfo.pQueueFamilyIndices = nullptr; // Optional
@@ -450,8 +450,8 @@ private:
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
     // 创建交换链
-    if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain) != VK_SUCCESS)
-    {
+    if (vkCreateSwapchainKHR(m_device, &createInfo, nullptr, &m_swapChain) !=
+        VK_SUCCESS) {
       LOG_ERROR("failed to create swap chain!");
       throw std::runtime_error("failed to create swap chain!");
     }
@@ -459,7 +459,8 @@ private:
     // 获取交换链图像句柄
     vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount, nullptr);
     m_swapChainImages.resize(imageCount);
-    vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount, m_swapChainImages.data());
+    vkGetSwapchainImagesKHR(m_device, m_swapChain, &imageCount,
+                            m_swapChainImages.data());
 
     // 保存交换链图像格式和分辨率
     m_swapChainImageFormat = surfaceFormat.format;
@@ -467,48 +468,90 @@ private:
   }
 
   // 创建交换链图像视图
-  void createImageViews()
-  {
+  void createImageViews() {
     // 1. 调整列表的大小以容纳所有图像视图
     m_swapChainImageViews.resize(m_swapChainImages.size());
 
     // 2. 遍历交换链图像，为每个图像创建视图
-    for (size_t i = 0; i < m_swapChainImages.size(); i++)
-    {
+    for (size_t i = 0; i < m_swapChainImages.size(); i++) {
       // 创建图像视图
       VkImageViewCreateInfo createInfo = {
           .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
           .image = m_swapChainImages[i],     // 指定图像句柄
           .viewType = VK_IMAGE_VIEW_TYPE_2D, // 指定图像视图类型
           .format = m_swapChainImageFormat,  // 指定图像格式
-          .components = {
-              // 指定颜色通道映射
-              .r = VK_COMPONENT_SWIZZLE_IDENTITY,
-              .g = VK_COMPONENT_SWIZZLE_IDENTITY,
-              .b = VK_COMPONENT_SWIZZLE_IDENTITY,
-              .a = VK_COMPONENT_SWIZZLE_IDENTITY,
-          },
-          .subresourceRange = {
-              // 指定图像的哪一部分将被视图访问
-              .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
-              .baseMipLevel = 0,
-              .levelCount = 1,
-              .baseArrayLayer = 0,
-              .layerCount = 1,
-          },
+          .components =
+              {
+                  // 指定颜色通道映射
+                  .r = VK_COMPONENT_SWIZZLE_IDENTITY,
+                  .g = VK_COMPONENT_SWIZZLE_IDENTITY,
+                  .b = VK_COMPONENT_SWIZZLE_IDENTITY,
+                  .a = VK_COMPONENT_SWIZZLE_IDENTITY,
+              },
+          .subresourceRange =
+              {
+                  // 指定图像的哪一部分将被视图访问
+                  .aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
+                  .baseMipLevel = 0,
+                  .levelCount = 1,
+                  .baseArrayLayer = 0,
+                  .layerCount = 1,
+              },
       };
 
-      if (vkCreateImageView(m_device, &createInfo, nullptr, &m_swapChainImageViews[i]) != VK_SUCCESS)
-      {
+      if (vkCreateImageView(m_device, &createInfo, nullptr,
+                            &m_swapChainImageViews[i]) != VK_SUCCESS) {
         LOG_ERROR("failed to create image views!");
         throw std::runtime_error("failed to create image views!");
       }
     }
   }
 
+  // 创建渲染通道
+  void createRenderPass() {
+    // 1.创建颜色附件描述
+    VkAttachmentDescription colorAttachment = {
+        .format = m_swapChainImageFormat,        // 指定颜色附件的格式
+        .samples = VK_SAMPLE_COUNT_1_BIT,        // 指定多重采样
+        .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,   // 指定加载操作
+        .storeOp = VK_ATTACHMENT_STORE_OP_STORE, // 指定存储操作
+        .stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE, // 指定模板加载操作
+        .stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE, // 指定模板存储操作
+        .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED,     // 指定初始布局
+        .finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, // 指定最终布局
+    };
+
+    // 2.创建颜色附件引用
+    VkAttachmentReference colorAttachmentRef = {
+        .attachment = 0, // 指定附件索引
+        .layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, // 指定布局
+    };
+
+    // 3.创建子通道描述
+    VkSubpassDescription subpass = {
+        .pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS, // 指定绑定点
+        .colorAttachmentCount = 1,                // 指定颜色附件数量
+        .pColorAttachments = &colorAttachmentRef, // 指定颜色附件
+    };
+
+    // 4.创建渲染通道描述
+    VkRenderPassCreateInfo renderPassInfo = {
+        .sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+        .attachmentCount = 1,                // 指定附件数量
+        .pAttachments = &colorAttachment,     // 指定附件
+        .subpassCount = 1,                    // 指定子通道数量
+        .pSubpasses = &subpass,               // 指定子通道
+    };
+
+    // 5.创建渲染通道
+    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr,
+                           &m_renderPass) != VK_SUCCESS) {
+      LOG_ERROR("failed to create render pass!");
+      throw std::runtime_error("failed to create render pass!");
+    }
+  }
   // 创建图形渲染管线
-  void createGraphicsPipeline()
-  {
+  void createGraphicsPipeline() {
     // 1.创建着色器阶段
     auto vertShaderCode = readFile(SHADER_PATH "00/triangle.vert.spv");
     auto fragShaderCode = readFile(SHADER_PATH "00/triangle.frag.spv");
@@ -530,14 +573,16 @@ private:
         .pName = "main",
     };
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo,
+                                                      fragShaderStageInfo};
 
     // 2.创建固定功能管线
     // 2.1 动态状态
-    std::vector<VkDynamicState> dynamicStates = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR,
-        VK_DYNAMIC_STATE_LINE_WIDTH};
+    std::vector<VkDynamicState> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT,
+                                                 VK_DYNAMIC_STATE_SCISSOR,
+                                                 VK_DYNAMIC_STATE_LINE_WIDTH};
 
     VkPipelineDynamicStateCreateInfo dynamicState = {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
@@ -547,18 +592,20 @@ private:
 
     // 2.2 顶点输入
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, // 结构体类型
-        .vertexBindingDescriptionCount = 0,                                 // 顶点绑定描述数量
-        .pVertexBindingDescriptions = nullptr,                              // 顶点绑定描述
-        .vertexAttributeDescriptionCount = 0,                               // 顶点属性描述数量
-        .pVertexAttributeDescriptions = nullptr,                            // 顶点属性描述
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO, // 结构体类型
+        .vertexBindingDescriptionCount = 0,      // 顶点绑定描述数量
+        .pVertexBindingDescriptions = nullptr,   // 顶点绑定描述
+        .vertexAttributeDescriptionCount = 0,    // 顶点属性描述数量
+        .pVertexAttributeDescriptions = nullptr, // 顶点属性描述
     };
 
     // 2.3 输入组装
     VkPipelineInputAssemblyStateCreateInfo inputAssembly = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, // 结构体类型
-        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,                      // 拓扑图元类型
-        .primitiveRestartEnable = VK_FALSE,                                   // 是否启用重启图元
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO, // 结构体类型
+        .topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, // 拓扑图元类型
+        .primitiveRestartEnable = VK_FALSE, // 是否启用重启图元
     };
 
     // 2.4 视口和裁剪
@@ -577,105 +624,129 @@ private:
     };
 
     VkPipelineViewportStateCreateInfo viewportState = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, // 结构体类型
-        .viewportCount = 1,                                             // 视口数量
-        .pViewports = &viewport,                                        // 视口
-        .scissorCount = 1,                                              // 裁剪矩形数量
-        .pScissors = &scissor,                                          // 裁剪矩形
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO, // 结构体类型
+        .viewportCount = 1,      // 视口数量
+        .pViewports = &viewport, // 视口
+        .scissorCount = 1,       // 裁剪矩形数量
+        .pScissors = &scissor,   // 裁剪矩形
     };
 
     // 2.5 光栅化
     VkPipelineRasterizationStateCreateInfo rasterizer = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, // 结构体类型
-        .depthClampEnable = VK_FALSE,                                        // 深度截断
-        .rasterizerDiscardEnable = VK_FALSE,                                 // 光栅化丢弃
-        .polygonMode = VK_POLYGON_MODE_FILL,                                 // 多边形模式
-        .cullMode = VK_CULL_MODE_BACK_BIT,                                   // 背面剔除
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,                                // 正面顺时针
-        .depthBiasEnable = VK_FALSE,                                         // 深度偏移
-        .lineWidth = 1.0f,                                                   // 线宽
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO, // 结构体类型
+        .depthClampEnable = VK_FALSE,         // 深度截断
+        .rasterizerDiscardEnable = VK_FALSE,  // 光栅化丢弃
+        .polygonMode = VK_POLYGON_MODE_FILL,  // 多边形模式
+        .cullMode = VK_CULL_MODE_BACK_BIT,    // 背面剔除
+        .frontFace = VK_FRONT_FACE_CLOCKWISE, // 正面顺时针
+        .depthBiasEnable = VK_FALSE,          // 深度偏移
+        .lineWidth = 1.0f,                    // 线宽
     };
 
     // 2.6 多重采样
     VkPipelineMultisampleStateCreateInfo multisampling = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, // 结构体类型
-        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT,                     // 光栅化采样
-        .sampleShadingEnable = VK_FALSE,                                   // 采样着色
-        .minSampleShading = 1.0f,                                          // 最小采样
-        .pSampleMask = nullptr,                                            // 采样掩码
-        .alphaToCoverageEnable = VK_FALSE,                                 // Alpha覆盖
-        .alphaToOneEnable = VK_FALSE,                                      // Alpha一个
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO, // 结构体类型
+        .rasterizationSamples = VK_SAMPLE_COUNT_1_BIT, // 光栅化采样
+        .sampleShadingEnable = VK_FALSE,               // 采样着色
+        .minSampleShading = 1.0f,                      // 最小采样
+        .pSampleMask = nullptr,                        // 采样掩码
+        .alphaToCoverageEnable = VK_FALSE,             // Alpha覆盖
+        .alphaToOneEnable = VK_FALSE,                  // Alpha一个
     };
 
     // 2.7 深度和模板测试
     VkPipelineDepthStencilStateCreateInfo depthStencil = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO, // 结构体类型
-        .depthTestEnable = VK_TRUE,                                          // 深度测试
-        .depthWriteEnable = VK_TRUE,                                         // 深度写入
-        .depthCompareOp = VK_COMPARE_OP_LESS,                                // 深度比较
-        .depthBoundsTestEnable = VK_FALSE,                                   // 深度边界测试
-        .stencilTestEnable = VK_FALSE,                                       // 模板测试
-        .front = {},                                                         // 正面
-        .back = {},                                                          // 背面
-        .minDepthBounds = 0.0f,                                              // 最小深度边界
-        .maxDepthBounds = 1.0f,                                              // 最大深度边界
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO, // 结构体类型
+        .depthTestEnable = VK_TRUE,           // 深度测试
+        .depthWriteEnable = VK_TRUE,          // 深度写入
+        .depthCompareOp = VK_COMPARE_OP_LESS, // 深度比较
+        .depthBoundsTestEnable = VK_FALSE,    // 深度边界测试
+        .stencilTestEnable = VK_FALSE,        // 模板测试
+        .front = {},                          // 正面
+        .back = {},                           // 背面
+        .minDepthBounds = 0.0f,               // 最小深度边界
+        .maxDepthBounds = 1.0f,               // 最大深度边界
     };
 
     // 2.8 颜色混合
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {
-        .blendEnable = VK_FALSE,                                                                                                      // 混合启用
-        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,                                                                                   // 源颜色混合因子
-        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,                                                                                  // 目标颜色混合因子
-        .colorBlendOp = VK_BLEND_OP_ADD,                                                                                              // 颜色混合操作
-        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,                                                                                   // 源Alpha混合因子
-        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,                                                                                  // 目标Alpha混合因子
-        .alphaBlendOp = VK_BLEND_OP_ADD,                                                                                              // Alpha混合操作                                                                  
-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT, // 颜色写入掩码
+        .blendEnable = VK_FALSE,                     // 混合启用
+        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,  // 源颜色混合因子
+        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO, // 目标颜色混合因子
+        .colorBlendOp = VK_BLEND_OP_ADD,             // 颜色混合操作
+        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,  // 源Alpha混合因子
+        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO, // 目标Alpha混合因子
+        .alphaBlendOp = VK_BLEND_OP_ADD,             // Alpha混合操作
+        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                          VK_COLOR_COMPONENT_B_BIT |
+                          VK_COLOR_COMPONENT_A_BIT, // 颜色写入掩码
     };
 
     VkPipelineColorBlendStateCreateInfo colorBlending = {
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, // 结构体类型
-        .logicOpEnable = VK_FALSE,                                        // 逻辑操作启用
-        .logicOp = VK_LOGIC_OP_COPY,                                      // 逻辑操作
-        .attachmentCount = 1,                                             // 附件数量
-        .pAttachments = &colorBlendAttachment,                            // 附件
-        .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f},                      // 混合常数
+        .sType =
+            VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO, // 结构体类型
+        .logicOpEnable = VK_FALSE,                  // 逻辑操作启用
+        .logicOp = VK_LOGIC_OP_COPY,                // 逻辑操作
+        .attachmentCount = 1,                       // 附件数量
+        .pAttachments = &colorBlendAttachment,      // 附件
+        .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f}, // 混合常数
     };
-    
+
+    // 2.9 管道布局
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {
+        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, // 结构体类型
+        .setLayoutCount = 0,            // 设置布局数量
+        .pSetLayouts = nullptr,         // 设置布局
+        .pushConstantRangeCount = 0,    // 推送常量范围数量
+        .pPushConstantRanges = nullptr, // 推送常量范围
+    };
+
+    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr,
+                               &m_pipelineLayout) != VK_SUCCESS) {
+      LOG_ERROR("failed to create pipeline layout!");
+      throw std::runtime_error("failed to create pipeline layout!");
+    }
+
     // 3.创建图形管线
     VkGraphicsPipelineCreateInfo pipelineInfo = {
         .sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO, // 结构体类型
-        .stageCount = 2,                                         // 着色器阶段数量
-        .pStages = shaderStages,                                 // 着色器阶段
-        .pVertexInputState = &vertexInputInfo,                   // 顶点输入
-        .pInputAssemblyState = &inputAssembly,                   // 输入组装
-        .pViewportState = &viewportState,                        // 视口和裁剪
-        .pRasterizationState = &rasterizer,                      // 光栅化
-        .pMultisampleState = &multisampling,                      // 多重采样
-        .pDepthStencilState = &depthStencil,                      // 深度和模板测试
-        .pColorBlendState = &colorBlending,                       // 颜色混合
-        .pDynamicState = &dynamicState,                          // 动态状态
-        .layout = VK_NULL_HANDLE,                                // 管线布局
-        .renderPass = VK_NULL_HANDLE,                            // 渲染通道
-        .subpass = 0,                                            // 子通道
-        .basePipelineHandle = VK_NULL_HANDLE,                    // 基础管线句柄
-        .basePipelineIndex = -1,                                 // 基础管线索引
+        .stageCount = 2,                       // 着色器阶段数量
+        .pStages = shaderStages,               // 着色器阶段
+        .pVertexInputState = &vertexInputInfo, // 顶点输入
+        .pInputAssemblyState = &inputAssembly, // 输入组装
+        .pViewportState = &viewportState,      // 视口和裁剪
+        .pRasterizationState = &rasterizer,    // 光栅化
+        .pMultisampleState = &multisampling,   // 多重采样
+        .pDepthStencilState = &depthStencil,   // 深度和模板测试
+        .pColorBlendState = &colorBlending,    // 颜色混合
+        .pDynamicState = &dynamicState,        // 动态状态
+        .layout = m_pipelineLayout,            // 管线布局
+        .renderPass = m_renderPass,            // 渲染通道
+        .subpass = 0,                          // 子通道
+        .basePipelineHandle = VK_NULL_HANDLE,  // 基础管线句柄
+        .basePipelineIndex = -1,               // 基础管线索引
     };
 
-    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_graphicsPipeline) != VK_SUCCESS)
-    {
+    if (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo,
+                                  nullptr, &m_graphicsPipeline) != VK_SUCCESS) {
       LOG_ERROR("failed to create graphics pipeline!");
       throw std::runtime_error("failed to create graphics pipeline!");
     }
 
+    // 4.清理着色器模块
+    vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
   }
 
 private:
   // 一些辅助函数
 
   // 创建VkShaderModule
-  VkShaderModule createShaderModule(const std::vector<char> &code)
-  {
+  VkShaderModule createShaderModule(const std::vector<char> &code) {
     VkShaderModuleCreateInfo createInfo = {
         .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
         .codeSize = code.size(),
@@ -683,8 +754,8 @@ private:
     };
 
     VkShaderModule shaderModule;
-    if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
-    {
+    if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) !=
+        VK_SUCCESS) {
       LOG_ERROR("failed to create shader module!");
       throw std::runtime_error("failed to create shader module!");
     }
@@ -693,43 +764,42 @@ private:
   }
 
   // 检查物理设备是否合适
-  bool isDeviceSuitable(VkPhysicalDevice device)
-  {
+  bool isDeviceSuitable(VkPhysicalDevice device) {
     QueueFamilyIndices indices = findQueueFamilies(device); // 寻找队列族
 
-    bool extensionsSupported = checkDeviceExtensionSupport(device); // 检查设备扩展是否支持
+    bool extensionsSupported =
+        checkDeviceExtensionSupport(device); // 检查设备扩展是否支持
 
     bool swapChainAdequate = false; // 交换链是否支持
-    if (extensionsSupported)
-    {
+    if (extensionsSupported) {
       SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
-      swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
+      swapChainAdequate = !swapChainSupport.formats.empty() &&
+                          !swapChainSupport.presentModes.empty();
     }
 
     return indices.isComplete() && extensionsSupported && swapChainAdequate;
   }
 
   // 枚举扩展并检查其中是否包含所有必需的扩展
-  bool checkDeviceExtensionSupport(VkPhysicalDevice device)
-  {
+  bool checkDeviceExtensionSupport(VkPhysicalDevice device) {
     uint32_t extensionCount;
-    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount,
+                                         nullptr);
 
     std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount,
+                                         availableExtensions.data());
 
-    std::set<std::string> requiredExtensions(m_deviceExtensions.begin(), m_deviceExtensions.end());
+    std::set<std::string> requiredExtensions(m_deviceExtensions.begin(),
+                                             m_deviceExtensions.end());
 
-    for (const auto &extension : availableExtensions)
-    {
+    for (const auto &extension : availableExtensions) {
       requiredExtensions.erase(extension.extensionName);
     }
 
-    if (requiredExtensions.empty())
-    {
+    if (requiredExtensions.empty()) {
       LOG_DEBUG("Remaining required extensions:");
-      for (const auto &extension : requiredExtensions)
-      {
+      for (const auto &extension : requiredExtensions) {
         LOG_DEBUG("\t{}", extension);
       }
     }
@@ -738,8 +808,7 @@ private:
   }
 
   // 给物理设备打分
-  int rateDeviceSuitability(VkPhysicalDevice device)
-  {
+  int rateDeviceSuitability(VkPhysicalDevice device) {
     VkPhysicalDeviceProperties deviceProperties;
     VkPhysicalDeviceFeatures deviceFeatures;
     vkGetPhysicalDeviceProperties(device, &deviceProperties);
@@ -748,14 +817,12 @@ private:
     int score = 0;
 
     // 为离散GPU打分
-    if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
-    {
+    if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
       score += 1000;
     }
 
     // 为支持的图形族打分
-    if (!deviceFeatures.geometryShader)
-    {
+    if (!deviceFeatures.geometryShader) {
       return 0;
     }
 
@@ -763,29 +830,31 @@ private:
   }
 
   // 获取交换链支持的详细信息
-  SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device)
-  {
+  SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) {
     SwapChainSupportDetails details;
 
     // 获取基本表面能力
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, m_surface, &details.capabilities);
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, m_surface,
+                                              &details.capabilities);
 
     // 获取表面格式
     uint32_t formatCount;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_surface, &formatCount, nullptr);
-    if (formatCount != 0)
-    {
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_surface, &formatCount,
+                                         nullptr);
+    if (formatCount != 0) {
       details.formats.resize(formatCount);
-      vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_surface, &formatCount, details.formats.data());
+      vkGetPhysicalDeviceSurfaceFormatsKHR(device, m_surface, &formatCount,
+                                           details.formats.data());
     }
 
     // 获取呈现模式
     uint32_t presentModeCount;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device, m_surface, &presentModeCount, nullptr);
-    if (presentModeCount != 0)
-    {
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device, m_surface,
+                                              &presentModeCount, nullptr);
+    if (presentModeCount != 0) {
       details.presentModes.resize(presentModeCount);
-      vkGetPhysicalDeviceSurfacePresentModesKHR(device, m_surface, &presentModeCount, details.presentModes.data());
+      vkGetPhysicalDeviceSurfacePresentModesKHR(
+          device, m_surface, &presentModeCount, details.presentModes.data());
     }
 
     return details;
@@ -793,12 +862,11 @@ private:
 
   // 表面格式,每个VkSurfaceFormatKHR条目包含一个format和一个colorSpace成员
   // format成员指定颜色通道和存储类型，colorSpace成员指定颜色空间
-  VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &availableFormats)
-  {
-    for (const auto &availableFormat : availableFormats)
-    {
-      if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-      {
+  VkSurfaceFormatKHR chooseSwapSurfaceFormat(
+      const std::vector<VkSurfaceFormatKHR> &availableFormats) {
+    for (const auto &availableFormat : availableFormats) {
+      if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
+          availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
         return availableFormat;
       }
     }
@@ -811,12 +879,10 @@ private:
   // VK_PRESENT_MODE_FIFO_KHR：交换链以队列的方式显示图像，当队列满时应用程序会被阻塞
   // VK_PRESENT_MODE_FIFO_RELAXED_KHR：交换链以队列的方式显示图像，当队列满时会显示新的图像，可能会造成撕裂
   // VK_PRESENT_MODE_MAILBOX_KHR：交换链以队列的方式显示图像，当队列满时会显示新的图像，旧的图像会被丢弃
-  VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR> &availablePresentModes)
-  {
-    for (const auto &availablePresentMode : availablePresentModes)
-    {
-      if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
-      {
+  VkPresentModeKHR chooseSwapPresentMode(
+      const std::vector<VkPresentModeKHR> &availablePresentModes) {
+    for (const auto &availablePresentMode : availablePresentModes) {
+      if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
         return availablePresentMode;
       }
     }
@@ -827,14 +893,10 @@ private:
   // 交换链分辨率
   // 如果当前分辨率不受限制，则返回当前分辨率
   // 否则返回最大分辨率
-  VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities)
-  {
-    if (capabilities.currentExtent.width != UINT32_MAX)
-    {
+  VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR &capabilities) {
+    if (capabilities.currentExtent.width != UINT32_MAX) {
       return capabilities.currentExtent;
-    }
-    else
-    {
+    } else {
       int width, height;
       glfwGetFramebufferSize(m_window, &width, &height);
 
@@ -843,21 +905,26 @@ private:
           static_cast<uint32_t>(height),
       };
 
-      actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(actualExtent.width, capabilities.maxImageExtent.width));
-      actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(actualExtent.height, capabilities.maxImageExtent.height));
+      actualExtent.width = std::max(
+          capabilities.minImageExtent.width,
+          std::min(actualExtent.width, capabilities.maxImageExtent.width));
+      actualExtent.height = std::max(
+          capabilities.minImageExtent.height,
+          std::min(actualExtent.height, capabilities.maxImageExtent.height));
 
       return actualExtent;
     }
   }
 
   // 填充调试报告信息
-  void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo)
-  {
+  void populateDebugMessengerCreateInfo(
+      VkDebugUtilsMessengerCreateInfoEXT &createInfo) {
     createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    createInfo.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
                              VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -865,32 +932,28 @@ private:
   }
 
   // 检查指定的验证层是否被支持
-  bool checkValidationLayerSupport()
-  {
+  bool checkValidationLayerSupport() {
     // 获取支持的验证层数量
     uint32_t layerCount;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
     // 获取支持的验证层列表
-    std::vector<VkLayerProperties> availableLayers(layerCount); // 获取支持的验证层列表
+    std::vector<VkLayerProperties> availableLayers(
+        layerCount); // 获取支持的验证层列表
     vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
 
     // 检查所有的指定的层是否都被支持
-    for (auto layerName : m_validationLayers)
-    {
+    for (auto layerName : m_validationLayers) {
       bool layerFound = false;
 
-      for (const auto &layerProperties : availableLayers)
-      {
-        if (strcmp(layerName, layerProperties.layerName) == 0)
-        {
+      for (const auto &layerProperties : availableLayers) {
+        if (strcmp(layerName, layerProperties.layerName) == 0) {
           layerFound = true;
           break;
         }
       }
 
-      if (!layerFound)
-      {
+      if (!layerFound) {
         return false;
       }
     }
@@ -899,34 +962,34 @@ private:
   }
 
   // 根据启用的验证层返回我们需要的插件列表
-  std::vector<const char *> getRequiredExtensions()
-  {
+  std::vector<const char *> getRequiredExtensions() {
     uint32_t glfwExtensionCount = 0;
     const char **glfwExtensions;
     glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
-    std::vector<const char *> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+    std::vector<const char *> extensions(glfwExtensions,
+                                         glfwExtensions + glfwExtensionCount);
 
     // 如果启用了验证层，添加相应的调试报告插件
-    if (enableValidationLayers)
-    {
+    if (enableValidationLayers) {
       extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
     return extensions;
   }
 
-  // 信息回调函数, 返回一个布尔值指示当验证层消息被Vulkan函数调用触发时是否应该退出程序
+  // 信息回调函数,
+  // 返回一个布尔值指示当验证层消息被Vulkan函数调用触发时是否应该退出程序
   static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
-      VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,    // 消息的严重性
-      VkDebugUtilsMessageTypeFlagsEXT messageType,               // 消息的类型
-      const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData, // 指向包含消息的结构体
-      void *pUserData)
-  {
-    std::string validationLayer = "validation layer: " + std::string(pCallbackData->pMessage);
+      VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, // 消息的严重性
+      VkDebugUtilsMessageTypeFlagsEXT messageType,            // 消息的类型
+      const VkDebugUtilsMessengerCallbackDataEXT
+          *pCallbackData, // 指向包含消息的结构体
+      void *pUserData) {
+    std::string validationLayer =
+        "validation layer: " + std::string(pCallbackData->pMessage);
 
-    switch (messageSeverity)
-    {
+    switch (messageSeverity) {
     case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
       LOG_TRACE("{}", validationLayer);
       break;
@@ -946,8 +1009,7 @@ private:
     return VK_FALSE;
   }
 
-  void setupDebugMessenger()
-  {
+  void setupDebugMessenger() {
     if (!enableValidationLayers)
       return;
 
@@ -963,8 +1025,8 @@ private:
         .pUserData = nullptr,
     };
 
-    if (CreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_debugMessenger) != VK_SUCCESS)
-    {
+    if (CreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr,
+                                     &m_debugMessenger) != VK_SUCCESS) {
       throw std::runtime_error("failed to set up debug messenger!");
     }
   }
@@ -996,6 +1058,10 @@ private:
 
   std::vector<VkImageView> m_swapChainImageViews; // 交换链图像视图
 
+  VkRenderPass m_renderPass; // 渲染通道
+
+  VkPipelineLayout m_pipelineLayout; // 管线布局
+
   VkPipeline m_graphicsPipeline; // 图形管线
 
   VkDebugUtilsMessengerEXT m_debugMessenger; // Vulkan调试报告
@@ -1012,19 +1078,15 @@ private:
       VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 };
 
-int main()
-{
+int main() {
   Log::Init();
 
   LOG_INFO("Hello, Vulkan!");
   HelloTriangleApplication app;
 
-  try
-  {
+  try {
     app.run();
-  }
-  catch (const std::exception &e)
-  {
+  } catch (const std::exception &e) {
     std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;
   }
